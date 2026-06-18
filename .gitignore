@@ -7,6 +7,10 @@ config.env
 **/config.env
 **/config/config.env
 
+# ...but DO keep the example templates (no real values)
+!.env.example
+!**/.env.example
+
 # ===== Dependencies =====
 node_modules/
 **/node_modules/
