@@ -1,0 +1,32 @@
+# ============================================================================
+#  Python test dependencies for the Subscribe Courses E2E suite
+#  Pinned versions => reproducible runs (same locally and in CI/Jenkins).
+#  Install:  pip install -r requirements.txt
+# ============================================================================
+
+# -- Core test runner ---------------------------------------------------------
+# pytest: discovers/runs tests, gives us fixtures, markers, assertions.
+pytest==8.3.4
+
+# -- Browser automation -------------------------------------------------------
+# playwright: drives a real browser (Chromium/Firefox/WebKit) with auto-waiting,
+# so flaky "element not ready" failures are largely avoided.
+playwright==1.49.1
+
+# pytest-playwright: wires Playwright into pytest (gives us the `page`/`browser`
+# fixtures, --headed/--browser CLI flags, automatic browser context per test).
+pytest-playwright==0.6.2
+
+# -- Reporting ----------------------------------------------------------------
+# allure-pytest: emits Allure result files (JSON) while tests run. A separate
+# Allure CLI (Java) turns those into the rich HTML report. In CI we publish it.
+allure-pytest==2.13.5
+
+# -- Config -------------------------------------------------------------------
+# python-dotenv: loads BASE_URL and other settings from a .env file so the same
+# tests run against localhost, staging, etc. without code changes.
+python-dotenv==1.0.1
+
+# -- Speed (optional but handy) ----------------------------------------------
+# pytest-xdist: run tests in parallel (`-n auto`) to cut suite time.
+pytest-xdist==3.6.1

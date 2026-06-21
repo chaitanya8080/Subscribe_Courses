@@ -1,0 +1,122 @@
+# ============================================================================
+#  End-to-End Tests (pytest + Playwright + Allure)
+#  Runs on every push / PR to main: boots the full stack, runs the UI suite,
+#  and publishes the Allure report.  This is the "tests run on commit" gate.
+# ============================================================================
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    # MongoDB the backend connects to — provided as a service container.
+    services:
+      mongo:
+        image: mongo:6
+        ports:
+          - 27017:27017
+
+    steps:
+      # 1) Get the code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2) Node for backend + frontend
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      # 3) Backend: install deps, write a TEST config.env (no real secrets), start it
+      - name: Start backend
+        working-directory: backend
+        run: |
+          npm ci
+          mkdir -p config
+          cat > config/config.env <<'EOF'
+          PORT=4000
+          JWT_SECRETKEY=ci_test_secret
+          FRONTEND_URL=http://localhost:3000
+          MONGO_URI=mongodb://localhost:27017/mycourses
+          SMTP_HOST=localhost
+          SMTP_PORT=2525
+          SMTP_USER=ci
+          SMTP_PASS=ci
+          CLOUDINARY_NAME=ci
+          CLOUDINARY_API_KEY=ci
+          CLOUDINARY_SECRET_KEY=ci
+          [email protected]
+          EOF
+          # also expose the same vars via .env (the database helper reads .env)
+          cp config/config.env .env
+          nohup node server.js > backend.log 2>&1 &
+
+      # 4) Frontend: install, build (CI=false so lint warnings don't fail it), serve
+      - name: Build & serve frontend
+        working-directory: frontend
+        env:
+          CI: "false" # CRA treats warnings as errors when CI=true; we don't want that
+        run: |
+          npm ci
+          npm run build      # prebuild compiles Tailwind into src/index.css
+          nohup npx --yes serve -s build -l 3000 > frontend.log 2>&1 &
+
+      # 5) Python + Playwright for the test suite
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        working-directory: automation
+        run: |
+          pip install -r requirements.txt
+          # --with-deps installs the OS libraries Chromium needs on Linux runners
+          python -m playwright install --with-deps chromium
+
+      # 6) Wait until both servers actually respond before testing
+      - name: Wait for app to be ready
+        run: npx --yes wait-on -t 120000 http://localhost:3000 http://localhost:4000/api/v1/courses
+
+      # 7) Run the suite (writes Allure results). Continues so the report still publishes.
+      - name: Run E2E tests
+        working-directory: automation
+        env:
+          BASE_URL: http://localhost:3000
+        run: python -m pytest
+
+      # 8) Always keep the raw results as an artifact
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: automation/allure-results
+
+      # 9) Render the Allure results into an HTML report (needs Java)
+      - name: Generate Allure report
+        if: always()
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Build Allure HTML
+        if: always()
+        run: |
+          npm install -g allure-commandline --silent
+          allure generate automation/allure-results -o automation/allure-report --clean
+
+      - name: Upload Allure HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: automation/allure-report
